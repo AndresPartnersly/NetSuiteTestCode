@@ -20,6 +20,7 @@ function (record, search, runtime, email, file, format, util, currency) {
             response.subsidiary = currScript.getParameter('custscript_plty_custpayment_adjust_sub');
             response.currency = currScript.getParameter('custscript_plty_custpayment_adjust_curr');
             response.payMethod = currScript.getParameter('custscript_plty_custpayment_adjust_pay_m');
+            response.adjustPositiveBalance = currScript.getParameter('custscript_plty_custpayment_adjust_pbala');
         } catch (e) {
             response.error = true;
             response.mensaje = "Netsuite Error - Excepción: " + e.message;
@@ -33,6 +34,7 @@ function (record, search, runtime, email, file, format, util, currency) {
         log.audit(proceso, 'GetInputData - INICIO');
 
         var dataProcesar = [];
+        var dataProcesarMap = [];
         var idJournals = [];
 
         try{
@@ -44,86 +46,89 @@ function (record, search, runtime, email, file, format, util, currency) {
 
             if(!dataParams.error){
 
-                //Se cargan los asientos a aplicar para cargar en arreglo
+                //INICIO - Se cargan las transacciones de entrada de diario creadas para el ajuste de las transacciones
                 var ssJournals = search.load({
                     id: 'customsearch_ptly_jounals_adjust',
                     type: search.Type.TRANSACTION
                 })
 
                 // Filtro subsidiaria
-                var ssJounalsFilterSub = search.createFilter({
+                var ssJournalsFilterSub = search.createFilter({
                     name: 'subsidiary',
                     operator: search.Operator.IS,
                     values: dataParams.subsidiary
                 });
-                ssJournals.filters.push(ssJounalsFilterSub);
+                ssJournals.filters.push(ssJournalsFilterSub);
 
                 // Filtro moneda
-                var ssJounalsFilterCurr = search.createFilter({
+                var ssJournalsFilterCurr = search.createFilter({
                     name: 'currency',
                     operator: search.Operator.IS,
                     values: dataParams.currency
                 });
-                ssJournals.filters.push(ssJounalsFilterCurr);
+                ssJournals.filters.push(ssJournalsFilterCurr);
 
                 var ssJournalsRun = ssJournals.run();
-                var ssJounalsRunRange = ssJournalsRun.getRange({
+                var ssJournalsRunRange = ssJournalsRun.getRange({
                     start: 0,
                     end: 1000
                 }); 
-                log.debug(proceso, "GetInputData - LINE 74 - ssJounalsRunRange.length: "+ ssJounalsRunRange.length);
-                for (var h = 0; h < ssJounalsRunRange.length; h++)
+                log.debug(proceso, "GetInputData - LINE 76 - ssJournalsRunRange.length: "+ ssJournalsRunRange.length);
+                for (var h = 0; h < ssJournalsRunRange.length; h++)
                 {
-                    idJournals.push(ssJounalsRunRange[h].getValue(ssJournalsRun.columns[0]));
+                    idJournals.push(ssJournalsRunRange[h].getValue(ssJournalsRun.columns[0]));
                 }
+                //FIN - Se cargan las transacciones de entrada de diario creadas para el ajuste de las transacciones
 
-                log.debug(proceso, "GetInputData - LINE 80 - idJournals: "+JSON.stringify(idJournals));
+                log.debug(proceso, "GetInputData - LINE 83 - idJournals: "+JSON.stringify(idJournals));
 
+
+                //Si existen entradas de diarios para ajustar se avanza con el proceso
                 if (!isEmpty(idJournals) && idJournals.length > 0)
                 {
-                    var ssPayments = search.load({
+                    //Se cargan los pagos de cliente, notas de credito y aplicaciones de deposito a ajustar
+                    var ssTransactions = search.load({
                         id:'customsearch_ptly_custpayment_pend',
-                        //id: 'customsearch_ptly_custpayment_pend_3',
                         type: search.Type.TRANSACTION
                     });
 
                     // Filtro subsidiaria
-                    var ssPaymentsFilterSub = search.createFilter({
+                    var ssTransactionsFilterSub = search.createFilter({
                         name: 'subsidiary',
                         operator: search.Operator.IS,
                         values: dataParams.subsidiary
                     })
-                    ssPayments.filters.push(ssPaymentsFilterSub);
+                    ssTransactions.filters.push(ssTransactionsFilterSub);
 
                     // Filtro subsidiaria
-                    var ssPaymentsFilterCurr = search.createFilter({
+                    var ssTransactionsFilterCurr = search.createFilter({
                         name: 'currency',
                         operator: search.Operator.IS,
                         values: dataParams.currency
                     })
-                    ssPayments.filters.push(ssPaymentsFilterCurr);
+                    ssTransactions.filters.push(ssTransactionsFilterCurr);
    
-                    var ssPaymentsRun = ssPayments.run()
-                    var ssPaymentsRunRange = ssPaymentsRun.getRange({
+                    var ssTransactionsRun = ssTransactions.run()
+                    var ssTransactionsRunRange = ssTransactionsRun.getRange({
                         start: 0,
                         end: 1000
                     });
 
-                    log.debug(proceso, "GetInputData - LINE 111 - ssPaymentsRunRange: "+ssPaymentsRunRange.length);
-                    if (ssPaymentsRunRange.length > 0)
+                    log.debug(proceso, "GetInputData - LINE 117 - ssTransactionsRunRange: "+ssTransactionsRunRange.length);
+                    if (ssTransactionsRunRange.length > 0)
                     {
-                        for (var i = 0; i < ssPaymentsRunRange.length; i++)
+                        for (var i = 0; i < ssTransactionsRunRange.length; i++)
                         {
                             var object = {};
-                            object.idCustomer = ssPaymentsRunRange[i].getValue(ssPaymentsRun.columns[6]);
-                            object.subsidiary = ssPaymentsRunRange[i].getValue(ssPaymentsRun.columns[12]);
-                            object.currency   = ssPaymentsRunRange[i].getValue(ssPaymentsRun.columns[11]);
-                            object.idPayment  = ssPaymentsRunRange[i].getValue(ssPaymentsRun.columns[0]);
-                            object.nroLocalizado = ssPaymentsRunRange[i].getValue(ssPaymentsRun.columns[5]);
+                            object.idCustomer = ssTransactionsRunRange[i].getValue(ssTransactionsRun.columns[6]);
+                            object.subsidiary = ssTransactionsRunRange[i].getValue(ssTransactionsRun.columns[12]);
+                            object.currency   = ssTransactionsRunRange[i].getValue(ssTransactionsRun.columns[11]);
+                            object.idPayment  = ssTransactionsRunRange[i].getValue(ssTransactionsRun.columns[0]);
+                            object.nroLocalizado = ssTransactionsRunRange[i].getValue(ssTransactionsRun.columns[5]);
                             object.araccount = dataParams.araccount;
                             object.payMethod = dataParams.payMethod;
+                            object.adjustPositiveBalance = dataParams.adjustPositiveBalance;
                             object.journals = idJournals;
-        
                             dataProcesar.push(object);
                         }
         
@@ -131,9 +136,66 @@ function (record, search, runtime, email, file, format, util, currency) {
                     }
                     else
                     {
-                        var mensaje = 'No existen pagos de clientes a saldar y/o ajustar';
+                        var mensaje = 'No existen transacciones de tipo pagos de cliente, nota de credito o aplicacion de deposito a saldar y/o ajustar';
                         log.error(proceso, mensaje);
                     }
+                    //FIN - Se cargan los asientos a aplicar para cargar en arreglo
+
+
+                    //INICIO - Se cargan las entradas de diario a ajustar
+                    var ssJournalsAdjust = search.load({
+                        id: 'customsearch_ptly_custpayment_pend_3',
+                        type: search.Type.TRANSACTION
+                    });
+
+                    // Filtro subsidiaria
+                    var ssJournalsAdjustFilterSub = search.createFilter({
+                        name: 'subsidiary',
+                        operator: search.Operator.IS,
+                        values: dataParams.subsidiary
+                    })
+                    ssJournalsAdjust.filters.push(ssJournalsAdjustFilterSub);
+
+                    // Filtro subsidiaria
+                    var ssJournalsAdjustFilterCurr = search.createFilter({
+                        name: 'currency',
+                        operator: search.Operator.IS,
+                        values: dataParams.currency
+                    })
+                    ssJournalsAdjust.filters.push(ssJournalsAdjustFilterCurr);
+   
+                    var ssJournalsAdjustRun = ssJournalsAdjust.run()
+                    var ssJournalsAdjustRunRange = ssJournalsAdjustRun.getRange({
+                        start: 0,
+                        end: 1000
+                    });
+
+                    log.debug(proceso, "GetInputData - LINE 173 - ssJournalsAdjustRunRange: "+ssJournalsAdjustRunRange.length);
+                    if (ssJournalsAdjustRunRange.length > 0)
+                    {
+                        for (var i = 0; i < ssJournalsAdjustRunRange.length; i++)
+                        {
+                            var object = {};
+                            object.idCustomer = ssJournalsAdjustRunRange[i].getValue(ssJournalsAdjustRun.columns[6]);
+                            object.subsidiary = ssJournalsAdjustRunRange[i].getValue(ssJournalsAdjustRun.columns[12]);
+                            object.currency   = ssJournalsAdjustRunRange[i].getValue(ssJournalsAdjustRun.columns[11]);
+                            object.idPayment  = ssJournalsAdjustRunRange[i].getValue(ssJournalsAdjustRun.columns[0]);
+                            object.nroLocalizado = ssJournalsAdjustRunRange[i].getValue(ssJournalsAdjustRun.columns[5]);
+                            object.araccount = dataParams.araccount;
+                            object.payMethod = dataParams.payMethod;
+                            object.adjustPositiveBalance = dataParams.adjustPositiveBalance;
+                            object.journals = idJournals;
+                            dataProcesar.push(object);
+                        }
+        
+                        log.debug(proceso, 'dataProcesar: '+JSON.stringify(dataProcesar));
+                    }
+                    else
+                    {
+                        var mensaje = 'No existen entradas de diario a saldar y/o ajustar';
+                        log.error(proceso, mensaje);
+                    }
+                    //FIN - Se cargan las entradas de diario a ajustar
                 }
                 else
                 {
@@ -160,12 +222,14 @@ function (record, search, runtime, email, file, format, util, currency) {
         try {
 
             var resultado = context.value;
-            log.debug(proceso, 'Map - LINE 162 - resultado: '+JSON.stringify(resultado));
+            log.debug(proceso, 'Map - LINE 225 - resultado: '+JSON.stringify(resultado));
 
             if (!isEmpty(resultado)) {
 
                 var searchResult = JSON.parse(resultado);
                 var obj = searchResult;
+
+                log.debug(proceso, 'Map - LINE 232');
                 var clave = obj.idPayment;
                 context.write(clave, JSON.stringify(obj));
             }
@@ -186,7 +250,7 @@ function (record, search, runtime, email, file, format, util, currency) {
 
         try {
 
-            log.debug(proceso, 'Reduce - LINE 188 - context : ' + JSON.stringify(context));
+            log.debug(proceso, 'Reduce - LINE 253 - context : ' + JSON.stringify(context));
 
             if (!isEmpty(context.values) && context.values.length > 0) {
 
@@ -194,156 +258,179 @@ function (record, search, runtime, email, file, format, util, currency) {
                 {
                     var registro = JSON.parse(context.values[k]);
                     respuesta.idTransaccion = `${registro.idPayment} - Numero Localizado: ${registro.nroLocalizado}`;
-                    log.debug(proceso,'Reduce - LINE 196 - registro: '+JSON.stringify(registro));
-
+                    log.debug(proceso,'Reduce - LINE 261 - registro: '+JSON.stringify(registro));
+            
                     var newRecord = record.create({
                         type: record.Type.CUSTOMER_PAYMENT,
                         isDynamic: true
                     });
-
+            
                     newRecord.setValue({
                         fieldId: 'customer',
                         value: registro.idCustomer
                     });
-
+            
                     newRecord.setValue({
                         fieldId: 'subsidiary',
                         value: registro.subsidiary
                     });
-
+            
                     newRecord.setValue({
                         fieldId: 'aracct',
                         value: registro.araccount
                     });
-
+            
                     newRecord.setValue({
                         fieldId: 'currency',
                         value: registro.currency
                     });
-
+            
                     newRecord.setValue({
                         fieldId: 'memo',
                         value: `Ajuste de saldo Pago ${registro.nroLocalizado}`
                     });
-
+            
                     newRecord.setValue({
                         fieldId: 'paymentmethod',
                         value: registro.payMethod
                     });
-
+            
                     //Se valida si el pago a saldar figura en la sublista de creditos
-                    var countLinesCredit = newRecord.getLineCount({ sublistId: 'credit' });
+                    const sublistcredit = 'credit'; 
+                    const sublistapply = 'apply'; 
                     var existeCredito = false;
                     var existeAsiento = false;
                     var creditAmount = 0.00;
                     var journalAmount = 0.00;
-                    log.debug(proceso,'Reduce - LINE 239 - countLinesCredit: '+countLinesCredit);
+                    var sublist = ''
 
+                    if (!registro.adjustPositiveBalance)
+                        sublist = sublistcredit;
+                    else
+                        sublist = sublistapply;
+
+                    var countLinesCredit = newRecord.getLineCount({ sublistId: sublist });
+
+                    log.debug(proceso,'Reduce - LINE 314 - countLines'+sublist+': '+countLinesCredit);
+            
                     for (k = 0; k < countLinesCredit; k++)
                     {
                         newRecord.selectLine({
-                            sublistId: 'credit',
+                            sublistId: sublist,
                             line: k
                         });
-
+            
                         var docNumber = newRecord.getCurrentSublistValue({
-                            sublistId: 'credit',
+                            sublistId: sublist,
                             fieldId: 'doc'
                         });
-
-                        log.debug(proceso,'Reduce - LINE 253 - docNumber: '+docNumber+' - registro.idPayment: '+registro.idPayment);
+            
+                        log.debug(proceso,'Reduce - LINE 328 - docNumber: '+docNumber+' - registro.idPayment: '+registro.idPayment);
                         if (docNumber == registro.idPayment)
                         {
                             existeCredito = true;
-
+        
                             newRecord.setCurrentSublistValue({
-                                sublistId:'credit',
+                                sublistId: sublist,
                                 fieldId: 'apply',
                                 value: true,
                                 ignoreFieldChange: false
                             });
-
+        
                             newRecord.commitLine({
-                                sublistId:'credit'
+                                sublistId:sublist
                             });
-
+        
                             creditAmount = newRecord.getCurrentSublistValue({
-                                sublistId: 'credit',
+                                sublistId: sublist,
                                 fieldId: 'amount'
                             });
-
-                            log.debug(proceso,`PagoID ${registro.idPayment} marcado - amountApplyCredito: ${creditAmount}`);
+        
+                            log.debug(proceso,`Credito ID ${registro.idPayment} marcado - amountApplyCredito: ${creditAmount}`);
                         }
                     }
                    
                     //Si se encontró credito a favor del cliente, se busca el asiento correspondiente
                     if (existeCredito && creditAmount > 0)
                     {
-                        var countLinesApply = newRecord.getLineCount({ sublistId: 'apply' });
-                        log.debug(proceso,'Reduce - LINE 282 - countLinesApply: '+countLinesApply);
+                        if (!registro.adjustPositiveBalance)
+                            sublist = sublistapply;
+                        else
+                            sublist = sublistcredit;
+
+                        var countLinesApply = newRecord.getLineCount({ sublistId: sublist });
+                        log.debug(proceso,'Reduce - LINE 362 - countLines'+sublist+': '+countLinesApply);
+
                         if (countLinesApply > 0)
                         {
                             for (j = 0; j < countLinesApply; j++)
                             {
                                 newRecord.selectLine({
-                                    sublistId: 'apply',
+                                    sublistId: sublist,
                                     line: j
                                 });
-
+            
                                 var docNumber = newRecord.getCurrentSublistValue({
-                                    sublistId: 'apply',
+                                    sublistId: sublist,
                                     fieldId: 'doc'
                                 });
 
+                                var lineAmount = newRecord.getCurrentSublistValue({
+                                    sublistId: sublist,
+                                    fieldId: 'due'
+                                });
+            
                                 //Se valida si el asiento que figura en la transaccion (sublista apply) coincide con uno de los asientos de ajustes generados
                                 if (!isEmpty(docNumber))
                                 {
-                                    var arrayTemporal =  registro.journals.filter(function (elemento){
+                                    log.debug(proceso,'Reduce - LINE 386 - indice: '+j +' - docNumber: '+docNumber+' - lineAmount: '+lineAmount + ' - creditAmount: '+creditAmount);
 
-                                        if (elemento == docNumber)
+                                    var arrayTemporal =  registro.journals.filter(function (elemento) {
+                                        
+                                        if (elemento == docNumber && creditAmount == lineAmount)
                                         {
                                             existeAsiento = true;
-
+    
                                             newRecord.setCurrentSublistValue({
-                                                sublistId: 'apply',
+                                                sublistId: sublist,
                                                 fieldId: 'apply',
                                                 value: true,
                                                 ignoreFieldChange: false
                                             });
-
+        
                                             newRecord.setCurrentSublistValue({
-                                                sublistId: 'apply',
+                                                sublistId: sublist,
                                                 fieldId: 'amount',
                                                 value: creditAmount,
                                                 ignoreFieldChange: false
                                             });
                 
                                             newRecord.commitLine({
-                                                sublistId: 'apply'
+                                                sublistId: sublist
                                             });
-
+        
                                             journalAmount = newRecord.getCurrentSublistValue({
-                                                sublistId: 'apply',
+                                                sublistId: sublist,
                                                 fieldId: 'amount'
                                             });
-                                        
-                                            log.debug(proceso,`JournalID:  ${docNumber} marcado - amountApplyJournal: ${journalAmount}`);
 
-                                            return (elemento == docNumber);
+                                            creditAmount = 0.00;
+                                        
+                                            log.debug(proceso,`Apply Transaction ID:  ${docNumber} marcado - amountApplyJournal: ${journalAmount}`);
                                         }
                                     });
                                 }
                             }
-                            log.debug(proceso,`Reduce - LINE 336 - registro: ${JSON.stringify(newRecord)}`);
-
-                            if (existeAsiento && (creditAmount == journalAmount))
+                            log.debug(proceso,`Reduce - LINE 424 - registro: ${JSON.stringify(newRecord)}`);
+            
+                            if (existeAsiento)
                             {
                                 var idnewrecord =  newRecord.save();
-                                log.debug(proceso,`PagoID Generado:  ${idnewrecord}`);
+                                log.audit(proceso,`PagoID Generado:  ${idnewrecord}`);
                             }
                             else
                             {
-                                var mensaje = `No existen asientos disponibles para aplicar al pago con ID: ${registro.idPayment} y numero de localizado: ${registro.nroLocalizado}`;
+                                var mensaje = `No existen asientos disponibles con el monto correcto para aplicar a la transaccion con ID: ${registro.idPayment} y numero de localizado: ${registro.nroLocalizado}`;
                                 respuesta.error = true;
                                 respuesta.detalle_error = mensaje;
                                 log.error(proceso,mensaje);    
@@ -351,7 +438,7 @@ function (record, search, runtime, email, file, format, util, currency) {
                         }
                         else
                         {
-                            var mensaje = `No existen asientos disponibles para aplicar al pago`;
+                            var mensaje = `No existen transacciones disponibles disponibles en la sublista secundaria ${sublist}`;
                             respuesta.error = true;
                             respuesta.detalle_error = mensaje;
                             log.error(proceso,mensaje);
@@ -359,14 +446,16 @@ function (record, search, runtime, email, file, format, util, currency) {
                     }
                     else
                     {
-                        var mensaje = `No se generó la transacción dado que no se encontró el pago en la sublista de creditos de la transacción`;
+                        var mensaje = `No se generó la transacción dado que no se encontró la transacción en la sublista primaria ${sublist} de la transacción`;
                         respuesta.error = true;
                         respuesta.detalle_error = mensaje;
                         log.error(proceso, mensaje);
                     }
                 }
-
+            
             }
+
+            
         } catch (e) {
             respuesta.error = true;
             mensaje = 'Excepcion Inesperada - Mensaje: ' + JSON.stringify(e.message);
@@ -386,8 +475,6 @@ function (record, search, runtime, email, file, format, util, currency) {
 
             var totalReduceErrors = 0;
             var arrayReduceResults = [];
-            //var solicitudesParentErrors = [];
-            //var solicitudesParentNoErrors = [];
             var messages = '';
 
             log.debug(proceso, 'Inicio - Summarize');
@@ -400,9 +487,9 @@ function (record, search, runtime, email, file, format, util, currency) {
 
                 if (objResp.error == true) {
                     totalReduceErrors++;
-                    log.error(proceso, `SUMMARIZE - Pago de cliente NO procesado ${objResp.idTransaccion}`);
+                    log.error(proceso, `SUMMARIZE - Transaccion NO procesada ${objResp.idTransaccion}`);
                 }else{
-                    log.debug(proceso, `SUMMARIZE - Pago de cliente procesado exitosamente ${objResp.idTransaccion}`);
+                    log.debug(proceso, `SUMMARIZE - Transaccion procesada exitosamente ${objResp.idTransaccion}`);
                 }
                 arrayReduceResults.push(objResp);
                 return true;
