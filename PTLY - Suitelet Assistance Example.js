@@ -19,6 +19,8 @@ define(['N/ui/serverWidget'], function(serverWidget) {
             label: 'Review and Submit'
         });
 
+        asistente.clientScriptModulePath = './assistantBehavior.js';
+
         let writeAssignment = function() {
             assistant.addField({
                 id: 'newsupervisor',
@@ -35,6 +37,8 @@ define(['N/ui/serverWidget'], function(serverWidget) {
         }
 
         let writeReview = function() {
+
+            log.debug('LINE 39','context.request.parameters: '+JSON.stringify(context.request.parameters));
             let supervisor = assistant.addField({
                 id: 'newsupervisor',
                 type: 'text',
@@ -66,18 +70,29 @@ define(['N/ui/serverWidget'], function(serverWidget) {
             context.response.writePage(assistant)
         } else //POST method - process step of the assistant
         {
-            if (context.request.parameters.next === 'Finish') //Finish was clicked
+            if (context.request.parameters.next === 'Finish')
+            {
                 writeResult();
-            else if (context.request.parameters.cancel) //Cancel was clicked
+                log.debug('LINE 74','');
+            } //Finish was clicked
+            else if (context.request.parameters.cancel)
+            {
                 writeCancel();
-            else if (assistant.currentStep.stepNumber === 1) { //transition from step 1 to step 2
+                log.debug('LINE 79','');
+            } //Cancel was clicked
+            else if (assistant.currentStep.stepNumber === 1)
+            { //transition from step 1 to step 2
                 writeReview();
                 assistant.currentStep = assistant.getNextStep();
                 context.response.writePage(assistant);
-            } else { //transition from step 2 back to step 1
+                log.debug('LINE 86','');
+            }
+            else
+            { //transition from step 2 back to step 1
                 writeAssignment();
                 assistant.currentStep = assistant.getNextStep();
                 context.response.writePage(assistant);
+                log.debug('LINE 93','');
             }
         }
     }
